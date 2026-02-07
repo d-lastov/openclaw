@@ -9,7 +9,7 @@ export type ResolvedMemorySearchConfig = {
   enabled: boolean;
   sources: Array<"memory" | "sessions">;
   extraPaths: string[];
-  provider: "openai" | "local" | "gemini" | "voyage" | "auto";
+  provider: "openai" | "local" | "gemini" | "voyage" | "yandex" | "auto";
   remote?: {
     baseUrl?: string;
     apiKey?: string;
@@ -25,7 +25,7 @@ export type ResolvedMemorySearchConfig = {
   experimental: {
     sessionMemory: boolean;
   };
-  fallback: "openai" | "gemini" | "local" | "voyage" | "none";
+  fallback: "openai" | "gemini" | "local" | "voyage" | "yandex" | "none";
   model: string;
   local: {
     modelPath?: string;
@@ -140,6 +140,7 @@ function mergeConfig(
     hasRemoteConfig ||
     provider === "openai" ||
     provider === "gemini" ||
+    provider === "yandex" ||
     provider === "voyage" ||
     provider === "auto";
   const batch = {

@@ -18,6 +18,8 @@ export type AgentModelEntryConfig = {
   params?: Record<string, unknown>;
   /** Enable streaming for this model (default: true, false for Ollama to avoid SDK issue #1205). */
   streaming?: boolean;
+  /** Auth profile ID to use for this model (overrides default profile selection). */
+  authProfile?: string;
 };
 
 export type AgentModelListConfig = {

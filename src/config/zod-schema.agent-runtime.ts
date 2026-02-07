@@ -319,7 +319,13 @@ export const MemorySearchSchema = z
       .strict()
       .optional(),
     provider: z
-      .union([z.literal("openai"), z.literal("local"), z.literal("gemini"), z.literal("voyage")])
+      .union([
+        z.literal("openai"),
+        z.literal("local"),
+        z.literal("gemini"),
+        z.literal("yandex"),
+        z.literal("voyage"),
+      ])
       .optional(),
     remote: z
       .object({
@@ -344,6 +350,7 @@ export const MemorySearchSchema = z
         z.literal("openai"),
         z.literal("gemini"),
         z.literal("local"),
+        z.literal("yandex"),
         z.literal("voyage"),
         z.literal("none"),
       ])

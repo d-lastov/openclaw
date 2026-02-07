@@ -13,6 +13,10 @@ source of truth; the model only "remembers" what gets written to disk.
 Memory search tools are provided by the active memory plugin (default:
 `memory-core`). Disable memory plugins with `plugins.slots.memory = "none"`.
 
+Alternative memory plugins:
+
+- [memory-qdrant-nebula](/plugins/memory-qdrant-nebula): Hybrid vector + knowledge graph storage using Qdrant and Nebula Graph, with multi-language auto-capture (EN/RU/CS)
+
 ## Memory files (Markdown)
 
 The default workspace layout uses two memory layers:
@@ -89,7 +93,8 @@ Defaults:
   2. `openai` if an OpenAI key can be resolved.
   3. `gemini` if a Gemini key can be resolved.
   4. `voyage` if a Voyage key can be resolved.
-  5. Otherwise memory search stays disabled until configured.
+  5. `yandex` if explicitly configured (requires API key).
+  6. Otherwise memory search stays disabled until configured.
 - Local mode uses node-llama-cpp and may require `pnpm approve-builds`.
 - Uses sqlite-vec (when available) to accelerate vector search inside SQLite.
 
@@ -264,6 +269,65 @@ Notes:
 - `remote.headers` lets you add extra headers if needed.
 - Default model: `gemini-embedding-001`.
 
+### Yandex Cloud embeddings
+
+Set the provider to `yandex` to use the Yandex Cloud Foundation Models API:
+
+```json5
+agents: {
+  defaults: {
+    memorySearch: {
+      provider: "yandex",
+      model: "emb://YOUR_FOLDER_ID/text-search-doc/latest",
+      remote: {
+        apiKey: "YOUR_YANDEX_API_KEY",
+        headers: {
+          "x-folder-id": "YOUR_FOLDER_ID"
+        }
+      }
+    }
+  }
+}
+```
+
+Notes:
+
+- Uses the native Yandex Foundation Models API (`llm.api.cloud.yandex.net`).
+- `remote.apiKey` is required. Use an API key from Yandex Cloud IAM.
+- `x-folder-id` header is required for authorization.
+- `model` should be a full model URI in the format `emb://FOLDER_ID/MODEL_NAME/VERSION`.
+- Default model: `text-search-doc/latest` (256-dimensional embeddings).
+- Yandex Cloud does **not** support batch embedding requests. OpenClaw sends requests sequentially (one text at a time).
+- Batch API (`remote.batch.enabled`) has no effect for Yandex provider.
+
+Available embedding models:
+
+| Model                      | Dimensions | Use case                                            |
+| -------------------------- | ---------- | --------------------------------------------------- |
+| `text-search-doc/latest`   | 256        | Document embeddings (recommended for memory search) |
+| `text-search-query/latest` | 256        | Query embeddings                                    |
+
+Example with explicit base URL override:
+
+```json5
+agents: {
+  defaults: {
+    memorySearch: {
+      provider: "yandex",
+      model: "emb://b1gxxxxxx/text-search-doc/latest",
+      remote: {
+        baseUrl: "https://llm.api.cloud.yandex.net/foundationModels/v1",
+        apiKey: "AQVN...",
+        headers: {
+          "x-folder-id": "b1gxxxxxx"
+        }
+      },
+      fallback: "none"
+    }
+  }
+}
+```
+
 If you want to use a **custom OpenAI-compatible endpoint** (OpenRouter, vLLM, or a proxy),
 you can use the `remote` configuration with the OpenAI provider:
 
@@ -288,7 +352,7 @@ If you don't want to set an API key, use `memorySearch.provider = "local"` or se
 
 Fallbacks:
 
-- `memorySearch.fallback` can be `openai`, `gemini`, `local`, or `none`.
+- `memorySearch.fallback` can be `openai`, `gemini`, `local`, `yandex`, or `none`.
 - The fallback provider is only used when the primary embedding provider fails.
 
 Batch indexing (OpenAI + Gemini):

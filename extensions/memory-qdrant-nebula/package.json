@@ -1,0 +1,19 @@
+{
+  "name": "@openclaw/memory-qdrant-nebula",
+  "version": "2026.2.4",
+  "description": "OpenClaw hybrid memory plugin with Qdrant (vector search) and Nebula Graph (knowledge graph)",
+  "type": "module",
+  "dependencies": {
+    "@nebula-contrib/nebula-nodejs": "^3.0.3",
+    "@qdrant/js-client-rest": "^1.16.0",
+    "@sinclair/typebox": "0.34.48"
+  },
+  "devDependencies": {
+    "openclaw": "workspace:*"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

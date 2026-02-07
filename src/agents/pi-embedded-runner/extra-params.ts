@@ -25,6 +25,33 @@ export function resolveExtraParams(params: {
   return modelConfig?.params ? { ...modelConfig.params } : undefined;
 }
 
+/**
+ * Resolve authProfile from model config.
+ * Checks both full key (provider/model) and model-only key.
+ *
+ * @internal Exported for testing only
+ */
+export function resolveModelAuthProfile(params: {
+  cfg: OpenClawConfig | undefined;
+  provider: string;
+  modelId: string;
+}): string | undefined {
+  const keys = [
+    `${params.provider}/${params.modelId}`, // full key
+    params.modelId, // model only
+  ];
+
+  for (const key of keys) {
+    const modelConfig = params.cfg?.agents?.defaults?.models?.[key];
+    const authProfile = (modelConfig as { authProfile?: string } | undefined)?.authProfile?.trim();
+    if (authProfile) {
+      return authProfile;
+    }
+  }
+
+  return undefined;
+}
+
 type CacheRetention = "none" | "short" | "long";
 type CacheRetentionStreamOptions = Partial<SimpleStreamOptions> & {
   cacheRetention?: CacheRetention;

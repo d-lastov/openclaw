@@ -47,6 +47,7 @@ import {
 import { normalizeUsage, type UsageLike } from "../usage.js";
 import { redactRunIdentifier, resolveRunWorkspaceDir } from "../workspace-run.js";
 import { compactEmbeddedPiSessionDirect } from "./compact.js";
+import { resolveModelAuthProfile } from "./extra-params.js";
 import { resolveGlobalLane, resolveSessionLane } from "./lanes.js";
 import { log } from "./logger.js";
 import { resolveModel } from "./model.js";
@@ -154,7 +155,19 @@ export async function runEmbeddedPiAgent(
       }
 
       const authStore = ensureAuthProfileStore(agentDir, { allowKeychainPrompt: false });
-      const preferredProfileId = params.authProfileId?.trim();
+      let preferredProfileId = params.authProfileId?.trim();
+
+      // Check model config for authProfile override (if not already set)
+      if (!preferredProfileId) {
+        const modelAuthProfile = resolveModelAuthProfile({
+          cfg: params.config,
+          provider,
+          modelId,
+        });
+        if (modelAuthProfile) {
+          preferredProfileId = modelAuthProfile;
+        }
+      }
       let lockedProfileId = params.authProfileIdSource === "user" ? preferredProfileId : undefined;
       if (lockedProfileId) {
         const lockedProfile = authStore.profiles[lockedProfileId];

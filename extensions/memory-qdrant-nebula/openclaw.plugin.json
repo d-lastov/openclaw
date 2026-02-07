@@ -1,0 +1,188 @@
+{
+  "id": "memory-qdrant-nebula",
+  "kind": "memory",
+  "uiHints": {
+    "qdrant.url": {
+      "label": "Qdrant URL",
+      "placeholder": "http://localhost:6333",
+      "help": "URL of your Qdrant server"
+    },
+    "qdrant.apiKey": {
+      "label": "Qdrant API Key",
+      "sensitive": true,
+      "placeholder": "your-api-key",
+      "help": "API key for Qdrant Cloud (optional for local)"
+    },
+    "nebula.host": {
+      "label": "Nebula Host",
+      "placeholder": "localhost",
+      "help": "Nebula Graph server hostname"
+    },
+    "nebula.port": {
+      "label": "Nebula Port",
+      "placeholder": "9669",
+      "advanced": true
+    },
+    "nebula.password": {
+      "label": "Nebula Password",
+      "sensitive": true,
+      "help": "Password for Nebula Graph"
+    },
+    "nebula.space": {
+      "label": "Nebula Space",
+      "placeholder": "openclaw_memory",
+      "advanced": true
+    },
+    "embedding.provider": {
+      "label": "Embedding Provider",
+      "help": "Provider for text embeddings (openai, gemini, local, yandex, or auto)"
+    },
+    "embedding.model": {
+      "label": "Embedding Model",
+      "placeholder": "text-embedding-3-small",
+      "help": "Model name for embeddings"
+    },
+    "embedding.remote.apiKey": {
+      "label": "Embedding API Key",
+      "sensitive": true,
+      "help": "API key for embedding provider (or use ${OPENAI_API_KEY})"
+    },
+    "embedding.fallback": {
+      "label": "Fallback Provider",
+      "help": "Fallback provider if primary fails (openai, gemini, local, none)"
+    },
+    "autoCapture": {
+      "label": "Auto-Capture",
+      "help": "Automatically capture important information from conversations"
+    },
+    "autoRecall": {
+      "label": "Auto-Recall",
+      "help": "Automatically inject relevant memories into context"
+    },
+    "graphEnrichment": {
+      "label": "Graph Enrichment",
+      "help": "Enrich search results with knowledge graph relationships"
+    },
+    "hybridWeight": {
+      "label": "Hybrid Weight",
+      "placeholder": "0.7",
+      "help": "Weight for vector search vs graph search (0-1)",
+      "advanced": true
+    },
+    "languages": {
+      "label": "Languages",
+      "help": "Languages to support for auto-capture triggers (en, ru, cs)"
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "qdrant": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "apiKey": {
+            "type": "string"
+          },
+          "collectionPrefix": {
+            "type": "string"
+          }
+        },
+        "required": ["url"]
+      },
+      "nebula": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "port": {
+            "type": "number"
+          },
+          "user": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "space": {
+            "type": "string"
+          }
+        },
+        "required": ["host", "password"]
+      },
+      "embedding": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": ["openai", "gemini", "local", "yandex", "auto"]
+          },
+          "model": {
+            "type": "string"
+          },
+          "remote": {
+            "type": "object",
+            "properties": {
+              "baseUrl": {
+                "type": "string"
+              },
+              "apiKey": {
+                "type": "string"
+              },
+              "headers": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "fallback": {
+            "type": "string",
+            "enum": ["openai", "gemini", "local", "none"]
+          },
+          "local": {
+            "type": "object",
+            "properties": {
+              "modelPath": {
+                "type": "string"
+              },
+              "modelCacheDir": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "autoCapture": {
+        "type": "boolean"
+      },
+      "autoRecall": {
+        "type": "boolean"
+      },
+      "graphEnrichment": {
+        "type": "boolean"
+      },
+      "hybridWeight": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "languages": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": ["en", "ru", "cs"]
+        }
+      }
+    },
+    "required": ["qdrant", "nebula"]
+  }
+}
