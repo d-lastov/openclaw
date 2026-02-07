@@ -264,6 +264,7 @@ export class NebulaMemoryClient {
       `CREATE TAG IF NOT EXISTS Person (name string, phone string, email string, role string)`,
       `CREATE TAG IF NOT EXISTS Organization (name string, type string)`,
       `CREATE TAG IF NOT EXISTS Concept (name string, category string, importance float)`,
+      `CREATE TAG IF NOT EXISTS Location (name string, country string)`,
       `CREATE TAG IF NOT EXISTS Memory (qdrantId string, text string, category string)`,
     ];
 
@@ -282,6 +283,11 @@ export class NebulaMemoryClient {
       `CREATE EDGE IF NOT EXISTS mentions (confidence float)`,
       `CREATE EDGE IF NOT EXISTS works_at (role string, since string)`,
       `CREATE EDGE IF NOT EXISTS belongs_to (role string)`,
+      `CREATE EDGE IF NOT EXISTS lives_in (since string)`,
+      `CREATE EDGE IF NOT EXISTS uses (proficiency string)`,
+      `CREATE EDGE IF NOT EXISTS studies_at (since string)`,
+      `CREATE EDGE IF NOT EXISTS manages (since string)`,
+      `CREATE EDGE IF NOT EXISTS interested_in (level string)`,
     ];
 
     for (const q of edgeQueries) {
@@ -330,16 +336,30 @@ export class NebulaMemoryClient {
     );
   }
 
+  /** Max length for Memory.text in Nebula (avoid oversized string storage) */
+  private static readonly MEMORY_TEXT_MAX_LEN = 4096;
+
   /**
-   * Link a memory to entities
+   * Link a memory to entities. Optionally store text and category on the Memory vertex.
+   * INSERT overwrites existing vertex with same VID, so this creates or updates the vertex.
    */
-  async linkMemory(memoryId: string, entityIds: string[]): Promise<void> {
+  async linkMemory(
+    memoryId: string,
+    entityIds: string[],
+    options?: { text?: string; category?: string },
+  ): Promise<void> {
     this.debug(`linkMemory: memoryId=${memoryId}, entities=[${entityIds.join(", ")}]`);
     await this.execute(`USE ${this.config.space}`);
 
-    // Create memory vertex if not exists
+    const text =
+      options?.text !== undefined
+        ? options.text.slice(0, NebulaMemoryClient.MEMORY_TEXT_MAX_LEN)
+        : "";
+    const category = options?.category ?? "";
+
+    // Create or overwrite memory vertex (INSERT with same VID overwrites in Nebula)
     await this.execute(
-      `INSERT VERTEX Memory (qdrantId) VALUES "${escapeValue(memoryId)}":("${escapeValue(memoryId)}")`,
+      `INSERT VERTEX Memory (qdrantId, text, category) VALUES "${escapeValue(memoryId)}":("${escapeValue(memoryId)}", "${escapeValue(text)}", "${escapeValue(category)}")`,
     );
 
     // Create edges to entities
@@ -408,39 +428,26 @@ export class NebulaMemoryClient {
 
     const memoryIds: string[] = [];
 
+    // Search across all entity tags: Person, Organization, Concept, Location
+    const entityTags = ["Person", "Organization", "Concept", "Location"] as const;
+
     for (const name of entityNames) {
-      try {
-        // Search for entities by name and find linked memories
-        const result = await this.execute(
-          `LOOKUP ON Person WHERE Person.name == "${escapeValue(name)}" YIELD id(vertex) as vid | GO FROM $-.vid REVERSELY OVER mentions YIELD src(edge) as memId`,
-        );
+      for (const tag of entityTags) {
+        try {
+          const result = await this.execute(
+            `LOOKUP ON ${tag} WHERE ${tag}.name == "${escapeValue(name)}" YIELD id(vertex) as vid | GO FROM $-.vid REVERSELY OVER mentions YIELD src(edge) as memId`,
+          );
 
-        if (result.data && result.data.length > 0) {
-          for (const row of result.data) {
-            if (row.memId) {
-              memoryIds.push(String(row.memId));
+          if (result.data && result.data.length > 0) {
+            for (const row of result.data) {
+              if (row.memId) {
+                memoryIds.push(String(row.memId));
+              }
             }
           }
+        } catch {
+          // Continue with other tags/entities
         }
-      } catch {
-        // Continue with other entities
-      }
-
-      // Also try Organization
-      try {
-        const result = await this.execute(
-          `LOOKUP ON Organization WHERE Organization.name == "${escapeValue(name)}" YIELD id(vertex) as vid | GO FROM $-.vid REVERSELY OVER mentions YIELD src(edge) as memId`,
-        );
-
-        if (result.data && result.data.length > 0) {
-          for (const row of result.data) {
-            if (row.memId) {
-              memoryIds.push(String(row.memId));
-            }
-          }
-        }
-      } catch {
-        // Continue
       }
     }
 
@@ -459,7 +466,7 @@ export class NebulaMemoryClient {
     let entityId: string | null = null;
     let entityType: EntityType | null = null;
 
-    for (const type of ["Person", "Organization", "Concept"] as const) {
+    for (const type of ["Person", "Organization", "Concept", "Location"] as const) {
       try {
         const result = await this.execute(
           `LOOKUP ON ${type} WHERE ${type}.name == "${escapeValue(entityName)}" YIELD id(vertex) as vid, properties(vertex) as props`,
@@ -495,10 +502,11 @@ export class NebulaMemoryClient {
       if (outResult.data) {
         for (const row of outResult.data) {
           if (row.dst && row.edgeType) {
+            const dstType = await this.detectEntityType(String(row.dst));
             related.push({
               entity: {
                 id: String(row.dst),
-                type: "concept", // Would need additional query to determine
+                type: dstType,
                 name: row.props?.name || String(row.dst),
                 properties: row.props || {},
               },
@@ -520,10 +528,11 @@ export class NebulaMemoryClient {
       if (inResult.data) {
         for (const row of inResult.data) {
           if (row.src && row.edgeType) {
+            const srcType = await this.detectEntityType(String(row.src));
             related.push({
               entity: {
                 id: String(row.src),
-                type: "concept",
+                type: srcType,
                 name: row.props?.name || String(row.src),
                 properties: row.props || {},
               },
@@ -558,12 +567,45 @@ export class NebulaMemoryClient {
   }
 
   /**
+   * Detect the entity type of a vertex by checking which tags it has.
+   * Tries Person, Organization, Concept, Location in order.
+   */
+  private async detectEntityType(vertexId: string): Promise<EntityType> {
+    const tagMap: Array<[string, EntityType]> = [
+      ["Person", "person"],
+      ["Organization", "organization"],
+      ["Concept", "concept"],
+      ["Location", "location"],
+    ];
+
+    for (const [tag, type] of tagMap) {
+      try {
+        const result = await this.execute(
+          `FETCH PROP ON ${tag} "${escapeValue(vertexId)}" YIELD ${tag}.name as name`,
+        );
+        if (result.data && result.data.length > 0) {
+          return type;
+        }
+      } catch {
+        // Try next tag
+      }
+    }
+
+    // Fallback: infer from vertex ID prefix (our IDs follow the pattern type_name)
+    if (vertexId.startsWith("person_")) return "person";
+    if (vertexId.startsWith("organization_")) return "organization";
+    if (vertexId.startsWith("location_")) return "location";
+    return "concept";
+  }
+
+  /**
    * Get graph statistics
    */
   async getStats(): Promise<{
     personCount: number;
     organizationCount: number;
     conceptCount: number;
+    locationCount: number;
     memoryCount: number;
     relationCount: number;
   }> {
@@ -573,6 +615,7 @@ export class NebulaMemoryClient {
     let personCount = 0;
     let organizationCount = 0;
     let conceptCount = 0;
+    let locationCount = 0;
     let memoryCount = 0;
     let relationCount = 0;
 
@@ -604,6 +647,15 @@ export class NebulaMemoryClient {
     }
 
     try {
+      const locationResult = await this.execute(
+        `LOOKUP ON Location YIELD id(vertex) | YIELD COUNT(*) as cnt`,
+      );
+      locationCount = locationResult.data?.[0]?.cnt || 0;
+    } catch {
+      // No data
+    }
+
+    try {
       const memResult = await this.execute(
         `LOOKUP ON Memory YIELD id(vertex) | YIELD COUNT(*) as cnt`,
       );
@@ -616,6 +668,7 @@ export class NebulaMemoryClient {
       personCount,
       organizationCount,
       conceptCount,
+      locationCount,
       memoryCount,
       relationCount,
     };

@@ -181,6 +181,25 @@ describe("memory triggers", () => {
     }
   });
 
+  describe("Russian expanded triggers", () => {
+    const expandedCases = [
+      { text: "Мой коллега Дмитрий сейчас в отпуске", expected: true, label: "relationship" },
+      { text: "Наш проект почти готов к релизу", expected: true, label: "project" },
+      { text: "У нас дедлайн в пятницу, надо успеть", expected: true, label: "temporal" },
+      { text: "Я знаю Python и немного Go", expected: true, label: "skill" },
+      { text: "Обожаю когда всё работает с первого раза", expected: true, label: "emotional" },
+      { text: "Я живу в Москве уже пять лет", expected: true, label: "location" },
+      { text: "Его зовут Андрей, он программист", expected: true, label: "name intro" },
+    ];
+
+    for (const { text, expected, label } of expandedCases) {
+      test(`"${text.slice(0, 40)}..." [${label}] should ${expected ? "match" : "not match"}`, () => {
+        const matches = MEMORY_TRIGGERS_RU.some((r) => r.test(text));
+        expect(matches).toBe(expected);
+      });
+    }
+  });
+
   describe("Czech triggers", () => {
     const testCases = [
       { text: "Zapamatuj si, že preferuji tmavý režim", expected: true },
@@ -239,9 +258,22 @@ describe("shouldCapture", () => {
     expect(shouldCapture("Great job! 🎉🎊🎉🎊 Amazing work!", ["en"])).toBe(false);
   });
 
-  test("rejects code blocks", () => {
+  test("rejects code blocks (triple backticks)", () => {
     expect(shouldCapture("Here's the code:\n```\nconst x = 1;\n```", ["en"])).toBe(false);
-    expect(shouldCapture("function myFunc() { return true; }", ["en"])).toBe(false);
+  });
+
+  test("allows text with occasional code-like words", () => {
+    // With the relaxed filter, a single "function" or "const" doesn't reject the text
+    // (only rejects if >50% of indicators are present or text has ```)
+    expect(shouldCapture("I decided to use a function called myFunc for this", ["en"])).toBe(true);
+  });
+
+  test("captures raised max length (up to 2000)", () => {
+    // A 600-char preference text should now be captured (previously rejected at 500)
+    const longText = "I prefer " + "dark mode ".repeat(60);
+    expect(longText.length).toBeGreaterThan(500);
+    expect(longText.length).toBeLessThan(2000);
+    expect(shouldCapture(longText, ["en"])).toBe(true);
   });
 });
 
@@ -353,9 +385,25 @@ describe("calculateImportance", () => {
     expect(phoneScore).toBeGreaterThan(baseScore);
   });
 
+  test("entity density boosts score", () => {
+    const baseScore = calculateImportance("Just a regular message without triggers");
+    const boostedScore = calculateImportance("Just a regular message without triggers", 3);
+    expect(boostedScore).toBeGreaterThan(baseScore);
+    // 3 entities * 0.05 = 0.15 boost (max)
+    expect(boostedScore - baseScore).toBeCloseTo(0.15, 1);
+  });
+
+  test("entity density boost is capped at +0.15", () => {
+    const boosted3 = calculateImportance("Just a regular message without triggers", 3);
+    const boosted10 = calculateImportance("Just a regular message without triggers", 10);
+    // Both should get the same max boost of 0.15
+    expect(boosted3).toBe(boosted10);
+  });
+
   test("score is capped at 1.0", () => {
     const maxScore = calculateImportance(
       "Remember this is critically important! My phone +12025551234, меня зовут Иван, мы решили использовать",
+      5,
     );
     expect(maxScore).toBeLessThanOrEqual(1.0);
   });
@@ -420,6 +468,19 @@ describe("extractEntities", () => {
 
     expect(personEntity).toBeDefined();
     expect(personEntity?.properties?.phone).toBeDefined();
+  });
+
+  test("extracts locations (Russian)", () => {
+    const entities = extractEntities("Я живу в Москве уже пять лет");
+    const locationEntity = entities.find((e) => e.type === "location");
+    expect(locationEntity).toBeDefined();
+  });
+
+  test("extracts locations (English)", () => {
+    const entities = extractEntities("I live in London and love the city");
+    const locationEntity = entities.find((e) => e.type === "location");
+    expect(locationEntity).toBeDefined();
+    expect(locationEntity?.name).toContain("London");
   });
 
   test("deduplicates entities", () => {

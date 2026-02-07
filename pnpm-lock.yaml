@@ -426,6 +426,9 @@ importers:
       '@sinclair/typebox':
         specifier: 0.34.48
         version: 0.34.48
+      az:
+        specifier: 0.2.3
+        version: 0.2.3
     devDependencies:
       openclaw:
         specifier: workspace:*
@@ -3150,6 +3153,9 @@ packages:
 
   axios@1.13.4:
     resolution: {integrity: sha512-1wVkUaAO6WyaYtCkcYCOx12ZgpGf9Zif+qXa4n+oYzK558YryKqiL6UWwd5DqiH3VRW0GYhTZQ/vlgJrCoNQlg==}
+
+  az@0.2.3:
+    resolution: {integrity: sha512-U8d6Tw8ohZ8dcEp8aKjFYo+DU3BT8JPmYqmW0A0BsWW8ocP+F6gLZvrtglHq7pYa84dCEp3NHAoZoC4W3Lth2w==}
 
   balanced-match@1.0.2:
     resolution: {integrity: sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==}
@@ -8681,6 +8687,8 @@ snapshots:
       proxy-from-env: 1.1.0
     transitivePeerDependencies:
       - debug
+
+  az@0.2.3: {}
 
   balanced-match@1.0.2: {}
 

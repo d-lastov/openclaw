@@ -57,7 +57,7 @@ export type MemoryQdrantNebulaConfig = {
 export const MEMORY_CATEGORIES = ["preference", "fact", "decision", "entity", "other"] as const;
 export type MemoryCategory = (typeof MEMORY_CATEGORIES)[number];
 
-export const ENTITY_TYPES = ["person", "organization", "concept"] as const;
+export const ENTITY_TYPES = ["person", "organization", "concept", "location"] as const;
 export type EntityType = (typeof ENTITY_TYPES)[number];
 
 // ============================================================================

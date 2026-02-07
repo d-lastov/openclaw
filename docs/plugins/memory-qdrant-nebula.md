@@ -265,6 +265,7 @@ Auto-capture recognizes memory-worthy phrases in multiple languages:
 - `Person`: name, phone, email, role
 - `Organization`: name, type
 - `Concept`: name, category, importance
+- `Memory`: qdrantId, text, category — when graph enrichment is on, each stored memory is represented as a vertex with the Qdrant id, a truncated copy of the memory text (for debugging and graph traversal), and its category.
 
 ### Relationships (Nebula edges)
 

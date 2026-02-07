@@ -40,6 +40,25 @@ export const MEMORY_TRIGGERS_RU: RegExp[] = [
   /(^|\s)(всегда|никогда|обязательно|важно|критично)(\s|$|[,.])/i,
   // Organization mentions (Russian)
   /(работаю\s+в|работаю\s+на|компания)/i,
+
+  // --- Expanded Russian triggers ---
+
+  // Relationship patterns: "мой коллега", "наш друг", "моя подруга"
+  /(мой|моя|мои|наш|наша|наши)\s+(коллега|друг|подруга|начальник|руководитель|брат|сестра|муж|жена|отец|мать|сын|дочь|знакомый|знакомая|сосед|соседка)/i,
+  // Project/product patterns: "наш проект", "наше приложение"
+  /(наш|наша|наше|наши)\s+(проект|продукт|стек|приложение|сервис|система|платформа|бот|команда)/i,
+  // Temporal facts: deadlines, meetings, plans
+  /(дедлайн|встреча|созвон|митинг|завтра\s+у\s+нас|послезавтра|на\s+следующей\s+неделе|в\s+понедельник|во\s+вторник|в\s+среду|в\s+четверг|в\s+пятницу|через\s+неделю)/i,
+  // Skill/experience patterns
+  /(знаю|умею|владею|изучаю|опыт\s+работы|опыт\s+с|опыт\s+в|освоил|выучил)/i,
+  // Emotional preferences
+  /(обожаю|терпеть\s+не\s+могу|бесит|раздражает|нравится\s+как|не\s+нравится\s+как)/i,
+  // Location patterns
+  /(живу\s+в|переехал|родом\s+из|нахожусь\s+в)/i,
+  // Learning/education
+  /(учусь|учился|закончил|окончил|поступил)\s+(в|на)/i,
+  // Name introductions (broader)
+  /(зовут|его\s+зовут|её\s+зовут|их\s+зовут)/i,
 ];
 
 export const MEMORY_TRIGGERS_CS: RegExp[] = [
@@ -70,7 +89,7 @@ const PREFERENCE_PATTERNS: RegExp[] = [
   // English
   /\b(prefer|like|love|hate|want|don't\s+want|favorite)\b/i,
   // Russian - no \b for Cyrillic
-  /(предпочитаю|нравится|не\s+нравится|люблю|ненавижу|хочу|не\s+хочу|любимый)/i,
+  /(предпочитаю|нравится|не\s+нравится|люблю|ненавижу|хочу|не\s+хочу|любимый|обожаю|терпеть\s+не\s+могу)/i,
   // Czech
   /\b(preferuji|líbí|nelíbí|miluju|nesnáším|chci|nechci|oblíbený)\b/i,
 ];
@@ -87,7 +106,7 @@ const DECISION_PATTERNS: RegExp[] = [
 const ENTITY_PATTERNS: RegExp[] = [
   // Names
   /\b(my\s+name\s+is|i\s+am|call\s+me)\b/i,
-  /(меня\s+зовут)/i,
+  /(меня\s+зовут|зовут)/i,
   /\b(jmenuji\s+se|jsem)\b/i,
   // Contact info
   /\+\d{10,}/,
@@ -100,6 +119,9 @@ const ENTITY_PATTERNS: RegExp[] = [
   /\b(works?\s+(at|for)|employed\s+by)\b/i,
   /(работаю\s+в|работаю\s+на)/i,
   /\b(pracuji\s+v|pracuji\s+pro)\b/i,
+  // Location
+  /(живу\s+в|переехал|родом\s+из)/i,
+  /\b(live[sd]?\s+in|moved\s+to|from)\b/i,
 ];
 
 const FACT_PATTERNS: RegExp[] = [
@@ -136,8 +158,8 @@ export function detectLanguage(text: string): SupportedLanguage {
  * Check if text should be captured as a memory
  */
 export function shouldCapture(text: string, languages: SupportedLanguage[]): boolean {
-  // Length checks
-  if (text.length < 10 || text.length > 500) {
+  // Length checks — raised max from 500 to 2000
+  if (text.length < 10 || text.length > 2000) {
     return false;
   }
 
@@ -162,8 +184,15 @@ export function shouldCapture(text: string, languages: SupportedLanguage[]): boo
     return false;
   }
 
-  // Skip code blocks
-  if (text.includes("```") || text.includes("const ") || text.includes("function ")) {
+  // Skip code blocks — only if >50% of text looks like code
+  // (fixed: previously rejected any text with "const " or "function ")
+  const codeIndicators = ["```", "const ", "function ", "=> {", "import ", "export ", "class ", "var ", "let "];
+  let codeTokenCount = 0;
+  for (const indicator of codeIndicators) {
+    if (text.includes(indicator)) codeTokenCount++;
+  }
+  const codeRatio = codeTokenCount / codeIndicators.length;
+  if (codeRatio > 0.5 || text.includes("```")) {
     return false;
   }
 
@@ -208,9 +237,10 @@ export function detectCategory(text: string): MemoryCategory {
 }
 
 /**
- * Calculate importance score based on text content
+ * Calculate importance score based on text content.
+ * Includes entity density boost.
  */
-export function calculateImportance(text: string): number {
+export function calculateImportance(text: string, entityCount?: number): number {
   let score = 0.5; // Base score
 
   // Important keywords increase score
@@ -236,6 +266,16 @@ export function calculateImportance(text: string): number {
   // Decision patterns increase score
   if (/\b(решили|decided|договорились|agreed)\b/i.test(text)) {
     score += 0.1;
+  }
+
+  // Relationship mentions increase score
+  if (/(мой|моя|наш)\s+(коллега|друг|начальник|брат|сестра|муж|жена)/i.test(text)) {
+    score += 0.1;
+  }
+
+  // Entity density boost: +0.05 per entity, max +0.15
+  if (entityCount && entityCount > 0) {
+    score += Math.min(entityCount * 0.05, 0.15);
   }
 
   // Cap at 1.0

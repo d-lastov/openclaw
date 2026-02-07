@@ -6,7 +6,8 @@
   "dependencies": {
     "@nebula-contrib/nebula-nodejs": "^3.0.3",
     "@qdrant/js-client-rest": "^1.16.0",
-    "@sinclair/typebox": "0.34.48"
+    "@sinclair/typebox": "0.34.48",
+    "az": "0.2.3"
   },
   "devDependencies": {
     "openclaw": "workspace:*"

@@ -24,8 +24,10 @@ import {
   extractEntities,
   extractEntityNames,
   extractRelations,
+  inferImplicitRelations,
   type ExtractedEntity,
 } from "./entity-extractor.js";
+import { ensureMorphInit } from "./morph.js";
 import { HybridSearch, formatSearchResults, sanitizeSearchResults } from "./hybrid-search.js";
 import { NebulaMemoryClient } from "./nebula-client.js";
 import { QdrantMemoryClient, type QdrantPayload, type QdrantPoint } from "./qdrant-client.js";
@@ -261,6 +263,11 @@ const memoryQdrantNebulaPlugin = {
     let hybridSearch: HybridSearch | null = null;
 
     const ensureClients = async () => {
+      // Initialize Az.js morphology engine (one-time, loads DAWG dicts)
+      await ensureMorphInit().catch((err) => {
+        api.logger.warn?.(`memory-qdrant-nebula: Az.Morph init failed (non-fatal): ${err}`);
+      });
+
       if (!embeddings) {
         embeddings = await createEmbeddingProvider(cfg);
       }
@@ -387,40 +394,54 @@ const memoryQdrantNebulaPlugin = {
           // Detect properties
           const detectedCategory = category || detectCategory(text);
           const detectedLanguage = detectLanguage(text);
-          const detectedImportance = importance ?? calculateImportance(text);
 
           // Extract entities and relations
           const entities = extractEntities(text);
           const relations = extractRelations(text);
+          const implicitRelations = inferImplicitRelations(entities, relations);
+          const allRelations = [...relations, ...implicitRelations];
+          const detectedImportance = importance ?? calculateImportance(text, entities.length);
           let entityIds: string[] = [];
 
-          if (entities.length > 0 && cfg.graphEnrichment) {
+          if (cfg.graphEnrichment && (entities.length > 0 || allRelations.length > 0)) {
             // Create entities in Nebula
-            entityIds = await clients.nebula.ensureEntities(
-              entities.map((e) => ({
-                type: e.type,
-                name: e.name,
-                properties: e.properties,
-              })),
-            );
+            if (entities.length > 0) {
+              entityIds = await clients.nebula.ensureEntities(
+                entities.map((e) => ({
+                  type: e.type,
+                  name: e.name,
+                  properties: e.properties,
+                })),
+              );
+            }
 
-            // Create relations between entities
-            for (const rel of relations) {
+            // Create relations — ensure both source and target entities exist
+            for (const rel of allRelations) {
               const sourceId = `${rel.sourceType}_${rel.sourceName.toLowerCase().replace(/\s+/g, "_")}`;
               const targetId = `${rel.targetType}_${rel.targetName.toLowerCase().replace(/\s+/g, "_")}`;
 
-              // Only create relation if both entities exist
-              if (entityIds.includes(sourceId) || entityIds.includes(targetId)) {
-                try {
-                  await clients.nebula.createRelation({
-                    sourceId,
-                    targetId,
-                    type: rel.relationType,
-                    properties: rel.properties,
-                  });
-                } catch {
-                  // Relation might already exist or entities not found
+              // Ensure both source and target exist in Nebula (not just current batch)
+              const ensuredIds = await clients.nebula.ensureEntities([
+                { type: rel.sourceType, name: rel.sourceName },
+                { type: rel.targetType, name: rel.targetName },
+              ]);
+
+              // Add to entityIds for Qdrant payload
+              for (const eid of ensuredIds) {
+                if (!entityIds.includes(eid)) {
+                  entityIds.push(eid);
                 }
+              }
+
+              try {
+                await clients.nebula.createRelation({
+                  sourceId,
+                  targetId,
+                  type: rel.relationType,
+                  properties: rel.properties,
+                });
+              } catch {
+                // Relation might already exist
               }
             }
           }
@@ -445,7 +466,10 @@ const memoryQdrantNebulaPlugin = {
 
           // Link memory to entities in Nebula
           if (entityIds.length > 0 && cfg.graphEnrichment) {
-            await clients.nebula.linkMemory(id, entityIds);
+            await clients.nebula.linkMemory(id, entityIds, {
+              text,
+              category: detectedCategory,
+            });
           }
 
           const entityNames = entities.map((e) => e.name);
@@ -711,8 +735,11 @@ const memoryQdrantNebulaPlugin = {
               // Update Qdrant payload
               await clients.qdrant.updatePayload(id, { entityIds });
 
-              // Link in Nebula
-              await clients.nebula.linkMemory(id, entityIds);
+              // Link in Nebula (with text/category for graph visibility)
+              await clients.nebula.linkMemory(id, entityIds, {
+                text: point.payload.text,
+                category: point.payload.category,
+              });
 
               synced++;
             }
@@ -809,12 +836,11 @@ const memoryQdrantNebulaPlugin = {
             return;
           }
 
-          // Store each capturable piece (limit to 3 per conversation)
+          // Store each capturable piece (limit to 5 per conversation)
           let stored = 0;
-          for (const text of toCapture.slice(0, 3)) {
+          for (const text of toCapture.slice(0, 5)) {
             const category = detectCategory(text);
             const language = detectLanguage(text);
-            const importance = calculateImportance(text);
             const vector = await clients.embeddings.embedQuery(text);
 
             // Check for duplicates
@@ -826,33 +852,47 @@ const memoryQdrantNebulaPlugin = {
             // Extract entities and relations
             const entities = extractEntities(text);
             const relations = extractRelations(text);
+            const implicitRelations = inferImplicitRelations(entities, relations);
+            const allRelations = [...relations, ...implicitRelations];
+            const importance = calculateImportance(text, entities.length);
             let entityIds: string[] = [];
 
-            if (entities.length > 0 && cfg.graphEnrichment) {
-              entityIds = await clients.nebula.ensureEntities(
-                entities.map((e) => ({
-                  type: e.type,
-                  name: e.name,
-                  properties: e.properties,
-                })),
-              );
+            if (cfg.graphEnrichment && (entities.length > 0 || allRelations.length > 0)) {
+              if (entities.length > 0) {
+                entityIds = await clients.nebula.ensureEntities(
+                  entities.map((e) => ({
+                    type: e.type,
+                    name: e.name,
+                    properties: e.properties,
+                  })),
+                );
+              }
 
-              // Create relations between entities
-              for (const rel of relations) {
+              // Create relations — ensure both source and target entities exist
+              for (const rel of allRelations) {
                 const sourceId = `${rel.sourceType}_${rel.sourceName.toLowerCase().replace(/\s+/g, "_")}`;
                 const targetId = `${rel.targetType}_${rel.targetName.toLowerCase().replace(/\s+/g, "_")}`;
 
-                if (entityIds.includes(sourceId) || entityIds.includes(targetId)) {
-                  try {
-                    await clients.nebula.createRelation({
-                      sourceId,
-                      targetId,
-                      type: rel.relationType,
-                      properties: rel.properties,
-                    });
-                  } catch {
-                    // Relation might already exist
+                const ensuredIds = await clients.nebula.ensureEntities([
+                  { type: rel.sourceType, name: rel.sourceName },
+                  { type: rel.targetType, name: rel.targetName },
+                ]);
+
+                for (const eid of ensuredIds) {
+                  if (!entityIds.includes(eid)) {
+                    entityIds.push(eid);
                   }
+                }
+
+                try {
+                  await clients.nebula.createRelation({
+                    sourceId,
+                    targetId,
+                    type: rel.relationType,
+                    properties: rel.properties,
+                  });
+                } catch {
+                  // Relation might already exist
                 }
               }
             }
@@ -875,7 +915,7 @@ const memoryQdrantNebulaPlugin = {
 
             // Link in graph
             if (entityIds.length > 0 && cfg.graphEnrichment) {
-              await clients.nebula.linkMemory(id, entityIds);
+              await clients.nebula.linkMemory(id, entityIds, { text, category });
             }
 
             stored++;
