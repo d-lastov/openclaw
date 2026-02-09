@@ -27,8 +27,8 @@ import {
   inferImplicitRelations,
   type ExtractedEntity,
 } from "./entity-extractor.js";
-import { ensureMorphInit } from "./morph.js";
 import { HybridSearch, formatSearchResults, sanitizeSearchResults } from "./hybrid-search.js";
+import { ensureMorphInit } from "./morph.js";
 import { NebulaMemoryClient } from "./nebula-client.js";
 import { QdrantMemoryClient, type QdrantPayload, type QdrantPoint } from "./qdrant-client.js";
 import {
@@ -251,7 +251,7 @@ const memoryQdrantNebulaPlugin = {
   kind: "memory" as const,
   configSchema: memoryQdrantNebulaConfigSchema,
 
-  async register(api: OpenClawPluginApi) {
+  register(api: OpenClawPluginApi) {
     const cfg = memoryQdrantNebulaConfigSchema.parse(api.pluginConfig);
     const agentId = api.runtime.agentId || "default";
     const vectorDim = vectorDimsForModel(cfg.embedding.model);
